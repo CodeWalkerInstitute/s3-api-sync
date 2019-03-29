@@ -102,8 +102,7 @@ class S3_Api_Sync_Admin {
 	public function setup_menu() {
 		add_menu_page("S3 API Sync", "S3 API Sync", "manage_options", "s3-api-sync-settings", array($this, "settings_page"));
 		add_action( 'admin_init', array($this, 'setup_settings' ));
-		error_log("register on save");
-		add_action( 'save_post', array($this, 'handle_object_save'));
+		add_action( 'save_post', array($this, 'handle_object_save'), 10, 3);
 	}
 
 	public function setup_settings() {
@@ -111,13 +110,23 @@ class S3_Api_Sync_Admin {
 		register_setting( 's3-api-sync-settings-group', 'aws-secret-access-key' );
 		register_setting( 's3-api-sync-settings-group', 'aws-region' );
 		register_setting( 's3-api-sync-settings-group', 'aws-bucket' );
+		register_setting( 's3-api-sync-settings-group', 's3-post-type');
+		register_setting( 's3-api-sync-settings-group', 'only-save-s3');
 	}
 
-	public function handle_object_save() {
+	public function handle_object_save($post_id, $post, $update) {
 		//TODO: Get all endpoints
-		$this->do_aws_upload("/", "general.json");
-		$this->do_aws_upload("/wp/v2/posts", "posts.json");
-		$this->do_aws_upload("/wp/v2/pages", "pages.json");
+		$s3PostType = get_option( 's3-post-type' );
+		$onlySaveS3Content = get_option( 'only-save-s3' );
+
+		if ($onlySaveS3Content) {
+			$this->do_aws_upload("/wp/v2/" . $s3PostType . "/" . $post_id, $post->post_name. ".json");
+		} else {
+			$this->do_aws_upload("/", "general.json");
+			$this->do_aws_upload("/wp/v2/posts", "posts.json");
+			$this->do_aws_upload("/wp/v2/pages", "pages.json");
+		}
+		
 	}
 
 	public function settings_page() {		
@@ -129,12 +138,11 @@ class S3_Api_Sync_Admin {
 	}
 
 	private function do_aws_upload($endpoint, $filename) {
-		error_log("do upload: ". $endpoint . "\t".$filename);
 		/// AWS API keys
 		$aws_access_key_id = get_option('aws-access-key-id');
-		error_log("aws_access_key_id: ". $aws_access_key_id);
+
 		$aws_secret_access_key = get_option('aws-secret-access-key');
-		error_log("aws_secret_access_key: ". $aws_secret_access_key);
+
 		// Bucket
 		$bucket_name = get_option('aws-bucket');
 
@@ -153,7 +161,7 @@ class S3_Api_Sync_Admin {
 		$data = $server->response_to_data( $response, false );
 		$content = wp_json_encode( $data );
 
-		//error_log("Content: " . var_export($content, true));
+
 		// AWS file permissions
 		$content_acl = 'public-read';
 
@@ -257,7 +265,6 @@ class S3_Api_Sync_Admin {
 		$r = curl_exec($ch);
 		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		if($http_code != 200) {
-			error_log('Error : Failed to upload to s3 - ' . $http_code);
 			$this->$http_code;
 			return false;
 		}
